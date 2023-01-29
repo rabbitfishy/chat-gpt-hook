@@ -17,8 +17,8 @@ LagRecord* Resolver::FindIdealRecord( AimPlayer* data ) {
 		if ( it->m_shot || it->m_mode == Modes::RESOLVE_BODY || it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE )
 			return;
 
-			if ( !best_record )
-				best_record = ⁢ &it;
+		if ( !best_record )
+			best_record = (LagRecord*)&it;
 	}
 
 	// none found above, return the first valid record if possible.
@@ -60,49 +60,12 @@ void Resolver::OnBodyUpdate( Player* player, float value ) {
 }
 
 float Resolver::GetAwayAngle( LagRecord* record ) {
-	float  delta{ std::numeric_limits< float >::max( ) };
-	vec3_t pos;
-	ang_t  away;
+	vec3_t delta = record->m_pred_origin - g_cl.m_local->m_vecOrigin( );
+	delta.normalize( );
 
-	// other cheats predict you by their own latency.
-	// they do this because, then they can put their away angle to exactly
-	// where you are on the server at that moment in time.
-
-	// the idea is that you would need to know where they 'saw' you when they created their user-command.
-	// lets say you move on your client right now, this would take half of our latency to arrive at the server.
-	// the delay between the server and the target client is compensated by themselves already, that is fortunate for us.
-
-	// we have no historical origins.
-	// no choice but to use the most recent one.
-	//if( g_cl.m_net_pos.empty( ) ) {
-		math::VectorAngles( g_cl.m_local->m_vecOrigin( ) - record->m_pred_origin, away );
-		return away.y;
-	//}
-
-	// half of our rtt.
-	// also known as the one-way delay.
-	//float owd = ( g_cl.m_latency / 2.f );
-
-	// since our origins are computed here on the client
-	// we have to compensate for the delay between our client and the server
-	// therefore the OWD should be subtracted from the target time.
-	//float target = record->m_pred_time; //- owd;
-
-	// iterate all.
-	//for( const auto &net : g_cl.m_net_pos ) {
-		// get the delta between this records time context
-		// and the target time.
-	//	float dt = std::abs( target - net.m_time );
-
-		// the best origin.
-	//	if( dt < delta ) {
-	//		delta = dt;
-	//		pos   = net.m_pos;
-	//	}
-	//}
-
-	//math::VectorAngles( pos - record->m_pred_origin, away );
-	//return away.y;
+	ang_t angles;
+	math::VectorAngles( delta, angles );
+	return angles.y;
 }
 
 void Resolver::MatchShot( AimPlayer* data, LagRecord* record ) {
