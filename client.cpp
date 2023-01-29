@@ -154,30 +154,18 @@ void Client::StartMove( CUserCmd* cmd ) {
 	m_shot = false;
 }
 
-void Client::BackupPlayers( bool restore ) {
-	if( restore ) {
-		// restore stuff.
-		for( int i{ 1 }; i <= g_csgo.m_globals->m_max_clients; ++i ) {
-			Player* player = g_csgo.m_entlist->GetClientEntity< Player* >( i );
+void Client::BackupPlayers(bool restore) {
+    for (int i = 1; i <= g_csgo.m_globals->m_max_clients; ++i) {
+        Player* player = g_csgo.m_entlist->GetClientEntity<Player*>(i);
 
-			if( !g_aimbot.IsValidTarget( player ) )
-				continue;
+        if (!g_aimbot.IsValidTarget(player))
+            continue;
 
-			g_aimbot.m_backup[ i - 1 ].restore( player );
-		}
-	}
-
-	else {
-		// backup stuff.
-		for( int i{ 1 }; i <= g_csgo.m_globals->m_max_clients; ++i ) {
-			Player* player = g_csgo.m_entlist->GetClientEntity< Player* >( i );
-
-			if( !g_aimbot.IsValidTarget( player ) )
-				continue;
-
-			g_aimbot.m_backup[ i - 1 ].store( player );
-		}
-	}
+        if (restore)
+            g_aimbot.m_backup[i - 1].restore(player);
+        else
+            g_aimbot.m_backup[i - 1].store(player);
+    }
 }
 
 void Client::DoMove( ) {
@@ -245,20 +233,6 @@ void Client::DoMove( ) {
 
 		UpdateRevolverCock( );
 		m_weapon_fire = CanFireWeapon( );
-	}
-
-	// last tick defuse.
-	// todo - dex;  figure out the range for CPlantedC4::Use?
-	//              add indicator if valid (on ground, still have time, not being defused already, etc).
-	//              move this? not sure where we should put it.
-	if( g_input.GetKeyState( g_menu.main.misc.last_tick_defuse.get( ) ) && g_visuals.m_c4_planted ) {
-		float defuse = ( m_local->m_bHasDefuser( ) ) ? 5.f : 10.f;
-		float remaining = g_visuals.m_planted_c4_explode_time - g_csgo.m_globals->m_curtime;
-		float dt = remaining - defuse - ( g_cl.m_latency / 2.f );
-
-		m_cmd->m_buttons &= ~IN_USE;
-		if( dt <= game::TICKS_TO_TIME( 2 ) )
-			m_cmd->m_buttons |= IN_USE;
 	}
 
 	// grenade prediction.
@@ -387,63 +361,52 @@ void Client::UpdateInformation( ) {
 		return;
 
 	CCSGOPlayerAnimState* state = g_cl.m_local->m_PlayerAnimState( );
-	if( !state )
+	if ( !state )
 		return;
 
-	// update time.
-	m_anim_frame = g_csgo.m_globals->m_curtime - m_anim_time;
+	// Update time
+	float delta_time = g_csgo.m_globals->m_curtime - m_anim_time;
 	m_anim_time = g_csgo.m_globals->m_curtime;
+	m_anim_frame = delta_time;
 
-	// current angle will be animated.
+	// Update current angle
 	m_angle = g_cl.m_cmd->m_view_angles;
-
-	// fix landing anim.
-	if( state->m_land && !state->m_dip_air && state->m_dip_cycle > 0.f )
+	if ( state->m_land && !state->m_dip_air && state->m_dip_cycle > 0.f )
 		m_angle.x = -12.f;
-
-	math::clamp( m_angle.x, -90.f, 90.f );
 	m_angle.normalize( );
+	math::clamp( m_angle.x, -90.f, 90.f );
 
-	// write angles to model.
+	// Set view angles for prediction
 	g_csgo.m_prediction->SetLocalViewAngles( m_angle );
-
-	// set lby to predicted value.
 	g_cl.m_local->m_flLowerBodyYawTarget( ) = m_body;
 
-	// CCSGOPlayerAnimState::Update, bypass already animated checks.
-	if( state->m_frame == g_csgo.m_globals->m_frame )
+	// Bypass animated checks in CCSGOPlayerAnimState::Update
+	if ( state->m_frame == g_csgo.m_globals->m_frame )
 		state->m_frame -= 1;
-
-	// call original, bypass hook.
 	g_hooks.m_UpdateClientSideAnimation( g_cl.m_local );
 
-	// get last networked poses.
+	// Update networked poses
 	g_cl.m_local->GetPoseParameters( g_cl.m_poses );
 
-	// store updated abs yaw.
+	// Update abs yaw
 	g_cl.m_abs_yaw = state->m_goal_feet_yaw;
 
-	// we landed.
-	if( !m_ground && state->m_ground ) {
+	// Update body and prediction times
+	if ( !m_ground && state->m_ground ) {
 		m_body = m_angle.y;
 		m_body_pred = m_anim_time;
 	}
-
-	// walking, delay lby update by .22.
-	else if( state->m_speed > 0.1f ) {
-		if( state->m_ground )
+	else if ( state->m_speed > 0.1f ) {
+		if ( state->m_ground )
 			m_body = m_angle.y;
-
 		m_body_pred = m_anim_time + 0.22f;
 	}
-
-	// standing update every 1.1s
-	else if( m_anim_time > m_body_pred ) {
+	else if ( m_anim_time > m_body_pred ) {
 		m_body = m_angle.y;
 		m_body_pred = m_anim_time + 1.1f;
 	}
 
-	// save updated data.
+	// Save updated information
 	m_rotation = g_cl.m_local->m_angAbsRotation( );
 	m_speed = state->m_speed;
 	m_ground = state->m_ground;

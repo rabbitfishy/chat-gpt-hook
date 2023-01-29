@@ -1,195 +1,117 @@
 #include "includes.h"
 
 float penetration::scale( Player* player, float damage, float armor_ratio, int hitgroup ) {
-	bool  has_heavy_armor;
-	int   armor;
-	float heavy_ratio, bonus_ratio, ratio, new_damage;
+	bool has_heavy_armor = player->m_bHasHeavyArmor( );
+	int armor = player->m_ArmorValue( );
 
-	static auto is_armored = []( Player* player, int armor, int hitgroup ) {
-		// the player has no armor.
-		if( armor <= 0 )
-			return false;
-
-		// if the hitgroup is head and the player has a helment, return true.
-		// otherwise only return true if the hitgroup is not generic / legs / gear.
-		if( hitgroup == HITGROUP_HEAD && player->m_bHasHelmet( ) )
-			return true;
-
-		else if( hitgroup >= HITGROUP_CHEST && hitgroup <= HITGROUP_RIGHTARM )
-			return true;
-
-		return false;
+	auto is_armored = [ ]( Player* p, int armor, int hg ) {
+		return armor > 0 && ( hg == HITGROUP_HEAD && p->m_bHasHelmet( ) || ( hg >= HITGROUP_CHEST && hg <= HITGROUP_RIGHTARM ) );
 	};
 
-	// check if the player has heavy armor, this is only really used in operation stuff.
-	has_heavy_armor = player->m_bHasHeavyArmor( );
-
-	// scale damage based on hitgroup.
-	switch( hitgroup ) {
+	switch ( hitgroup ) {
 	case HITGROUP_HEAD:
-		if( has_heavy_armor )
-			damage = ( damage * 4.f ) * 0.5f;
-		else
-			damage *= 4.f;
+		damage *= has_heavy_armor ? 2.f : 4.f;
 		break;
-
 	case HITGROUP_STOMACH:
 		damage *= 1.25f;
 		break;
-
 	case HITGROUP_LEFTLEG:
 	case HITGROUP_RIGHTLEG:
 		damage *= 0.75f;
 		break;
-
-	default:
-		break;
 	}
 
-	// grab amount of player armor.
-	armor = player->m_ArmorValue( );
-
-	// check if the ent is armored and scale damage based on armor.
-	if( is_armored( player, armor, hitgroup ) ) {
-		heavy_ratio = 1.f;
-		bonus_ratio = 0.5f;
-		ratio       = armor_ratio * 0.5f;
-
-		// player has heavy armor.
-		if( has_heavy_armor ) {
-			// calculate ratio values.
-			bonus_ratio = 0.33f;
-			ratio       = armor_ratio * 0.25f;
-			heavy_ratio = 0.33f;
-
-			// calculate new damage.
-			new_damage = ( damage * ratio ) * 0.85f;
-		}
-
-		// no heavy armor, do normal damage calculation.
-		else
-			new_damage = damage * ratio;
-
-		if( ( ( damage - new_damage ) * ( heavy_ratio * bonus_ratio ) ) > armor )
-			new_damage = damage - ( armor / bonus_ratio );
-
+	if ( is_armored( player, armor, hitgroup ) ) {
+		float ratio = armor_ratio * ( has_heavy_armor ? 0.25f : 0.5f );
+		float new_damage = damage * ratio;
+		if ( ( ( damage - new_damage ) * ( has_heavy_armor ? 0.33f * 0.5f : 0.5f ) ) > armor )
+			new_damage = damage - ( armor / ( has_heavy_armor ? 0.33f : 0.5f ) );
 		damage = new_damage;
 	}
 
 	return std::floor( damage );
 }
 
-bool penetration::TraceToExit( const vec3_t &start, const vec3_t& dir, vec3_t& out, CGameTrace* enter_trace, CGameTrace* exit_trace ) {
-    static CTraceFilterSimple_game filter{};
-
-	float  dist{};
+bool penetration::TraceToExit( const vec3_t& start, const vec3_t& dir, vec3_t& out, CGameTrace* enter_trace, CGameTrace* exit_trace )
+{
+	static CTraceFilterSimple_game filter{};
+	float dist = 0;
 	vec3_t new_end;
-	int    contents, first_contents{};
-
-	// max pen distance is 90 units.
-	while( dist <= 90.f ) {
-		// step forward a bit.
+	int contents, first_contents = 0;
+	while ( dist <= 90.f )
+	{
 		dist += 4.f;
-
-		// set out pos.
 		out = start + ( dir * dist );
-
-		if( !first_contents )
+		if ( !first_contents )
 			first_contents = g_csgo.m_engine_trace->GetPointContents( out, MASK_SHOT, nullptr );
-
 		contents = g_csgo.m_engine_trace->GetPointContents( out, MASK_SHOT, nullptr );
-
-		if( ( contents & MASK_SHOT_HULL ) && ( !( contents & CONTENTS_HITBOX ) || ( contents == first_contents ) ) )
+		if ( ( contents & MASK_SHOT_HULL ) && ( !( contents & CONTENTS_HITBOX ) || ( contents == first_contents ) ) )
 			continue;
-
-		// move end pos a bit for tracing.
 		new_end = out - ( dir * 4.f );
-
-		// do first trace aHR0cHM6Ly9zdGVhbWNvbW11bml0eS5jb20vaWQvc2ltcGxlcmVhbGlzdGlj.
 		g_csgo.m_engine_trace->TraceRay( Ray( out, new_end ), MASK_SHOT, nullptr, exit_trace );
-
-        // note - dex; this is some new stuff added sometime around late 2017 ( 10.31.2017 update? ).
-        if( g_csgo.sv_clip_penetration_traces_to_players->GetInt( ) )
-            game::UTIL_ClipTraceToPlayers( out, new_end, MASK_SHOT, nullptr, exit_trace, -60.f );
-
-        // we hit an ent's hitbox, do another trace.
-        if( exit_trace->m_startsolid && ( exit_trace->m_surface.m_flags & SURF_HITBOX ) ) {
+		if ( g_csgo.sv_clip_penetration_traces_to_players->GetInt( ) )
+			game::UTIL_ClipTraceToPlayers( out, new_end, MASK_SHOT, nullptr, exit_trace, -60.f );
+		if ( exit_trace->m_startsolid && ( exit_trace->m_surface.m_flags & SURF_HITBOX ) )
+		{
 			filter.SetPassEntity( exit_trace->m_entity );
-        
-			g_csgo.m_engine_trace->TraceRay( Ray( out, start ), MASK_SHOT_HULL, (ITraceFilter *)&filter, exit_trace );
-        
-			if( exit_trace->hit( ) && !exit_trace->m_startsolid ) {
-                out = exit_trace->m_endpos;
-                return true;
-            }
-
-            continue;
+			g_csgo.m_engine_trace->TraceRay( Ray( out, start ), MASK_SHOT_HULL, ( ITraceFilter* )&filter, exit_trace );
+			if ( exit_trace->hit( ) && !exit_trace->m_startsolid )
+			{
+				out = exit_trace->m_endpos;
+				return true;
+			}
+			continue;
 		}
-
-        if( !exit_trace->hit( ) || exit_trace->m_startsolid ) {
-            if( game::IsBreakable( enter_trace->m_entity ) ) {
-                *exit_trace          = *enter_trace;
-                exit_trace->m_endpos = start + dir;
-            	return true;
-            }
-
-            continue;
-        }
-
-        if( ( exit_trace->m_surface.m_flags & SURF_NODRAW ) ) {
-            // note - dex; ok, when this happens the game seems to not ignore world?
-            if( game::IsBreakable( exit_trace->m_entity ) && game::IsBreakable( enter_trace->m_entity ) ) {
-                out = exit_trace->m_endpos;
-                return true;
-            } 
-
-            if( !( enter_trace->m_surface.m_flags & SURF_NODRAW ) )
-                continue;
-        }
-
-        if( exit_trace->m_plane.m_normal.dot( dir ) <= 1.f ) {
-            out -= ( dir * ( exit_trace->m_fraction * 4.f ) );
-            return true;
-        }
+		if ( !exit_trace->hit( ) || exit_trace->m_startsolid )
+		{
+			if ( game::IsBreakable( enter_trace->m_entity ) )
+			{
+				*exit_trace = *enter_trace;
+				exit_trace->m_endpos = start + dir;
+				return true;
+			}
+			continue;
+		}
+		if ( exit_trace->m_surface.m_flags & SURF_NODRAW )
+		{
+			if ( game::IsBreakable( exit_trace->m_entity ) && game::IsBreakable( enter_trace->m_entity ) )
+			{
+				out = exit_trace->m_endpos;
+				return true;
+			}
+			if ( !( enter_trace->m_surface.m_flags & SURF_NODRAW ) )
+				continue;
+		}
+		if ( exit_trace->m_plane.m_normal.dot( dir ) <= 1.f )
+		{
+			out -= ( dir * ( exit_trace->m_fraction * 4.f ) );
+			return true;
+		}
 	}
-
-	return false;
 }
 
+
 void penetration::ClipTraceToPlayer( const vec3_t& start, const vec3_t& end, uint32_t mask, CGameTrace* tr, Player* player, float min ) {
-	vec3_t     pos, to, dir, on_ray;
-	float      len, range_along, range;
-	Ray        ray;
-	CGameTrace new_trace;
+	vec3_t pos = player->m_vecOrigin( ) + ( player->m_vecMins( ) + player->m_vecMaxs( ) ) * 0.5f;
+	vec3_t to = pos - start;
+	vec3_t dir = start - end;
+	float len = dir.normalize( );
+	float range_along = dir.dot( to );
+	float range;
 
-	// reference: https://github.com/alliedmodders/hl2sdk/blob/3957adff10fe20d38a62fa8c018340bf2618742b/game/shared/util_shared.h#L381
-
-	// set some local vars.
-	pos         = player->m_vecOrigin( ) + ( ( player->m_vecMins( ) + player->m_vecMaxs( ) ) * 0.5f );
-	to          = pos - start;
-	dir         = start - end;
-	len         = dir.normalize( );
-	range_along = dir.dot( to );
-
-	// off start point.
-	if( range_along < 0.f )	
-		range = -( to ).length( );
-
-	// off end point.
-	else if( range_along > len ) 
+	if ( range_along < 0 )
+		range = -to.length( );
+	else if ( range_along > len )
 		range = -( pos - end ).length( );
-
-	// within ray bounds.
 	else {
-		on_ray = start + ( dir * range_along );
-		range  = ( pos - on_ray ).length( );
+		vec3_t on_ray = start + ( dir * range_along );
+		range = ( pos - on_ray ).length( );
 	}
 
-	if( /*min <= range &&*/ range <= 60.f ) {
-		// clip to player.
+	if ( range <= 60 ) {
+		CGameTrace new_trace;
 		g_csgo.m_engine_trace->ClipRayToEntity( Ray( start, end ), mask, player, &new_trace );
-
-		if( tr->m_fraction > new_trace.m_fraction )
+		if ( tr->m_fraction > new_trace.m_fraction )
 			*tr = new_trace;
 	}
 }
@@ -206,41 +128,36 @@ bool penetration::run( PenetrationInput_t* in, PenetrationOutput_t* out ) {
 	Weapon		  *weapon;
 	WeaponInfo    *weapon_info;
 
-	// if we are tracing from our local player perspective.
-	if( in->m_from->m_bIsLocalPlayer( ) ) {
-		weapon      = g_cl.m_weapon;
+	// Check if tracing is from local player's perspective.
+	if ( in->m_from->m_bIsLocalPlayer( ) ) {
+		weapon = g_cl.m_weapon;
 		weapon_info = g_cl.m_weapon_info;
-		start       = g_cl.m_shoot_pos;
+		start = g_cl.m_shoot_pos;
 	}
-
-	// not local player.
+	// If not local player
 	else {
 		weapon = in->m_from->GetActiveWeapon( );
-		if( !weapon )
+		if ( !weapon )
 			return false;
-
-		// get weapon info.
 		weapon_info = weapon->GetWpnData( );
-		if( !weapon_info )
+		if ( !weapon_info )
 			return false;
-
-		// set trace start.
 		start = in->m_from->GetShootPosition( );
 	}
 
-	// get some weapon data.
-	damage      = ( float )weapon_info->m_damage;
+	// Get weapon data
+	damage = ( float )weapon_info->m_damage;
 	penetration = weapon_info->m_penetration;
 
-    // used later in calculations.
-    penetration_mod = std::max( 0.f, ( 3.f / penetration ) * 1.25f );
+	// Calculate penetration mod
+	penetration_mod = std::max( 0.f, ( 3.f / penetration ) * 1.25f );
 
-	// get direction to end point.
+	// Get direction to end point
 	dir = ( in->m_pos - start ).normalized( );
 
-    // setup trace filter for later.
-    filter.SetPassEntity( in->m_from );
-    filter.SetPassEntity2( nullptr );
+	// Set up trace filter
+	filter.SetPassEntity( in->m_from );
+	filter.SetPassEntity2( nullptr );
 
     while( damage > 0.f ) {
 		// calculating remaining len.

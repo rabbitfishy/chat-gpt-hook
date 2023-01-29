@@ -49,41 +49,29 @@ void HVH::AutoDirection( ) {
 	AutoTarget_t target{ 180.f + 1.f, nullptr };
 
 	// iterate players.
-	for( int i{ 1 }; i <= g_csgo.m_globals->m_max_clients; ++i ) {
-		Player *player = g_csgo.m_entlist->GetClientEntity< Player * >( i );
+	for ( int i{ 1 }; i <= g_csgo.m_globals->m_max_clients; ++i ) {
+		Player* player = g_csgo.m_entlist->GetClientEntity< Player* >( i );
 
-		// validate player.
-		if( !g_aimbot.IsValidTarget( player ) )
+		if ( !player || player->dormant( ) || !g_aimbot.IsValidTarget( player ) )
 			continue;
 
-		// skip dormant players.
-		if( player->dormant( ) )
-			continue;
-
-		// get best target based on fov.
 		float fov = math::GetFOV( g_cl.m_view_angles, g_cl.m_shoot_pos, player->WorldSpaceCenter( ) );
-
-		if( fov < target.fov ) {
+		if ( fov < target.fov ) {
 			target.fov = fov;
 			target.player = player;
 		}
 	}
 
-	if( !target.player ) {
-		// we have a timeout.
-		if( m_auto_last > 0.f && m_auto_time > 0.f && g_csgo.m_globals->m_curtime < ( m_auto_last + m_auto_time ) )
+	if ( !target.player ) {
+		if ( m_auto_last > 0.f && m_auto_time > 0.f &&
+			g_csgo.m_globals->m_curtime < ( m_auto_last + m_auto_time ) ) {
 			return;
+		}
 
-		// set angle to backwards.
 		m_auto = math::NormalizedAngle( m_view - 180.f );
 		m_auto_dist = -1.f;
 		return;
 	}
-
-	/*
-	* data struct
-	* 68 74 74 70 73 3a 2f 2f 73 74 65 61 6d 63 6f 6d 6d 75 6e 69 74 79 2e 63 6f 6d 2f 69 64 2f 73 69 6d 70 6c 65 72 65 61 6c 69 73 74 69 63 2f
-	*/
 
 	// construct vector of angles to test.
 	std::vector< AdaptiveAngle > angles{ };
@@ -166,6 +154,8 @@ void HVH::AutoDirection( ) {
 
 	// the best angle should be at the front now.
 	AdaptiveAngle *best = &angles.front( );
+	if ( angles.empty( ) )
+		return;
 
 	// check if we are not doing a useless change.
 	if( best->m_dist != m_auto_dist ) {
@@ -194,52 +184,39 @@ void HVH::GetAntiAimDirection( ) {
 	if( ( lock && g_cl.m_speed > 0.1f ) || !lock )
 		m_view = g_cl.m_cmd->m_view_angles.y;
 
-	if( m_base_angle > 0 ) {
-		// 'static'.
-		if( m_base_angle == 1 )
+	if ( m_base_angle > 0 ) {
+		if ( m_base_angle == 1 ) {
 			m_view = 0.f;
-
-		// away options.
+		}
 		else {
-			float  best_fov{ std::numeric_limits< float >::max( ) };
-			float  best_dist{ std::numeric_limits< float >::max( ) };
-			float  fov, dist;
-			Player *target, *best_target{ nullptr };
+			float best_fov = std::numeric_limits<float>::max( );
+			float best_dist = std::numeric_limits<float>::max( );
+			float fov, dist;
+			Player* target = nullptr;
+			Player* best_target = nullptr;
 
-			for( int i{ 1 }; i <= g_csgo.m_globals->m_max_clients; ++i ) {
-				target = g_csgo.m_entlist->GetClientEntity< Player * >( i );
-
-				if( !g_aimbot.IsValidTarget( target ) )
+			for ( int i = 1; i <= g_csgo.m_globals->m_max_clients; ++i ) {
+				target = g_csgo.m_entlist->GetClientEntity<Player*>( i );
+				if ( !g_aimbot.IsValidTarget( target ) || target->dormant( ) )
 					continue;
 
-				if( target->dormant( ) )
-					continue;
-
-				// 'away crosshair'.
-				if( m_base_angle == 2 ) {
-
-					// check if a player was closer to our crosshair.
+				if ( m_base_angle == 2 ) {
 					fov = math::GetFOV( g_cl.m_view_angles, g_cl.m_shoot_pos, target->WorldSpaceCenter( ) );
-					if( fov < best_fov ) {
+					if ( fov < best_fov ) {
 						best_fov = fov;
 						best_target = target;
 					}
 				}
-
-				// 'away distance'.
-				else if( m_base_angle == 3 ) {
-
-					// check if a player was closer to us.
+				else if ( m_base_angle == 3 ) {
 					dist = ( target->m_vecOrigin( ) - g_cl.m_local->m_vecOrigin( ) ).length_sqr( );
-					if( dist < best_dist ) {
+					if ( dist < best_dist ) {
 						best_dist = dist;
 						best_target = target;
 					}
 				}
 			}
 
-			if( best_target ) {
-				// todo - dex; calculate only the yaw needed for this (if we're not going to use the x component that is).
+			if ( best_target ) {
 				ang_t angle;
 				math::VectorAngles( best_target->m_vecOrigin( ) - g_cl.m_local->m_vecOrigin( ), angle );
 				m_view = angle.y;
@@ -416,6 +393,23 @@ bool HVH::DoEdgeAntiAim( Player *player, ang_t &out ) {
 	return false;
 }
 
+float flLowerBodyDelta = 0.f;
+static float flNextBodyUpdateTime = 0.f;
+float m_lby;
+float m_update_time;
+float m_last_update_time = 0.f;
+float m_min_interval = 0.2f;
+float m_max_interval = 0.6f;
+
+void update_interval( )
+{
+	if ( g_csgo.m_globals->m_curtime - m_last_update_time >= m_min_interval + g_csgo.m_globals->m_interval )
+	{
+		m_last_update_time = g_csgo.m_globals->m_curtime;
+		m_min_interval = ( rand( ) % 100 ) / 100.f * ( m_max_interval - m_min_interval ) + m_min_interval;
+	}
+}
+
 void HVH::DoRealAntiAim( ) {
 	// if we have a yaw antaim.
 	if( m_yaw > 0 ) {
@@ -457,10 +451,99 @@ void HVH::DoRealAntiAim( ) {
 
 					// z.
 				case 4:
-					g_cl.m_cmd->m_view_angles.y += 90.f;
+					if ( g_csgo.m_globals->m_curtime < flNextBodyUpdateTime )
+						return;
+
+					flLowerBodyDelta += 30.f;
+
+					if ( flLowerBodyDelta > 360.f )
+						flLowerBodyDelta = 0.f;
+
+					g_cl.m_cmd->m_view_angles.y = flLowerBodyDelta;
+
+					flNextBodyUpdateTime = g_csgo.m_globals->m_curtime + 0.22f;
+
 					break;
+					
+				case 5: // chat gpt 2
+					// randomization range
+					const float max_offset = 35.f;
+
+					// generate random offset value within the range
+					float offset = ( rand( ) % ( int )( 2 * max_offset ) ) - max_offset;
+
+					// determine which type of anti-aim to use
+					bool use_left = rand( ) % 2;
+
+					if ( use_left )
+						g_cl.m_cmd->m_view_angles.y = 90.f + offset;
+					else
+						g_cl.m_cmd->m_view_angles.y = -90.f + offset;
+					break;
+				case 6: // another chat gpt3
+					// declare variables to store current time and previous time
+					int current_time = g_csgo.m_globals->m_tick_count;
+					int previous_time = 0;
+					auto m_update_interval = rand() % (50 - 500 + 1) + 50;
+
+					// in the anti-aim function
+					// if the current time minus the previous time is greater than or equal to the desired update interval
+					if ( current_time - previous_time >= m_update_interval ) {
+						// update previous time to current time
+						previous_time = current_time;
+
+						// generate a random number within the desired range
+						float random_num = std::rand( ) % 180;
+
+						// set the lowerbody yaw to the random number
+						g_cl.m_cmd->m_view_angles.y = random_num;
+					}
+					break;
+					case 7:
+						if ( ( g_csgo.m_globals->m_curtime - m_update_time ) >= ( ( rand( ) % 100 ) / 100.f + 0.15f ) )
+						{
+							m_update_time = g_csgo.m_globals->m_curtime;
+							m_lby = ( rand( ) % 180 ) - 90.f;
+						}
+
+						g_cl.m_cmd->m_view_angles.y = m_lby;
+						break;
+					case 8:
+						if ( g_csgo.m_globals->m_curtime - m_last_update_time >= m_min_interval )
+						{
+							m_last_update_time = g_csgo.m_globals->m_curtime;
+							g_cl.m_cmd->m_view_angles.y = rand( ) % 360 - 180.f;
+							m_min_interval = ( rand( ) % 100 ) / 100.f * ( m_max_interval - m_min_interval ) + m_min_interval;
+						}
+						break;
+
 				}
 			}
+
+			/*
+						static auto last_update = std::chrono::high_resolution_clock::now( );
+				auto current_time = std::chrono::high_resolution_clock::now( );
+				auto interval = std::chrono::duration_cast<std::chrono::milliseconds>( current_time - last_update ).count( );
+				static float m_min_interval = 50.0f; 
+				static float m_max_interval = 200.0f;
+				static float m_interval_range = m_max_interval - m_min_interval;
+
+				if( interval < m_min_interval || interval > m_max_interval )
+				{
+					last_update = std::chrono::high_resolution_clock::now( );
+					interval = std::chrono::duration_cast<std::chrono::milliseconds>( last_update - current_time ).count( );
+				}
+
+				static auto RandomFloat = [] (float min, float max) -> float
+				{
+					static auto rand_gen = std::mt19937( std::random_device{ }( ) );
+					static auto dist = std::uniform_real_distribution< float >( min, max );
+					return dist( rand_gen );
+				};
+
+				static float random_yaw = RandomFloat( 0.f, 360.f );
+				g_cl.m_cmd->m_view_angles.y = random_yaw;
+			*/
 
 			else if( air ) {
 				switch( g_menu.main.antiaim.body_fake_air.get( ) ) {

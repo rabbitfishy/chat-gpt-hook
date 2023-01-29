@@ -3,42 +3,47 @@
 Resolver g_resolver{};;
 
 LagRecord* Resolver::FindIdealRecord( AimPlayer* data ) {
+	LagRecord* first_valid, * current;
+
 	if ( data->m_records.empty( ) )
 		return nullptr;
 
-	LagRecord* best_record = nullptr;
+	first_valid = nullptr;
 
 	// iterate records.
 	for ( const auto& it : data->m_records ) {
 		if ( it->dormant( ) || it->immune( ) || !it->valid( ) )
 			continue;
 
+		// get current record.
+		current = it.get( );
+
+		// first record that was valid, store it for later.
+		if ( !first_valid )
+			first_valid = current;
+
 		// try to find a record with a shot, lby update, walking or no anti-aim.
 		if ( it->m_shot || it->m_mode == Modes::RESOLVE_BODY || it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE )
-			return false;
-
-		if ( !best_record )
-			best_record = (LagRecord*)&it;
+			return current;
 	}
 
 	// none found above, return the first valid record if possible.
-	return best_record;
+	return ( first_valid ) ? first_valid : nullptr;
 }
 
-
 LagRecord* Resolver::FindLastRecord( AimPlayer* data ) {
-    LagRecord* current;
+	LagRecord* current;
 
-	if( data->m_records.empty( ) )
+	if ( data->m_records.empty( ) )
 		return nullptr;
 
 	// iterate records in reverse.
-	for( auto it = data->m_records.crbegin( ); it != data->m_records.crend( ); ++it ) {
+	for ( auto it = data->m_records.crbegin( ); it != data->m_records.crend( ); ++it ) {
 		current = it->get( );
 
 		// if this record is valid.
 		// we are done since we iterated in reverse.
-		if( current->valid( ) && !current->immune( ) && !current->dormant( ) )
+		if ( current->valid( ) && !current->immune( ) && !current->dormant( ) )
 			return current;
 	}
 
@@ -218,40 +223,6 @@ void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 			record->m_mode = Modes::RESOLVE_STOPPED_MOVING;
 		}
 	}
-
-	// stand2 -> no known last move.
-	record->m_mode = Modes::RESOLVE_STAND2;
-
-	// Calculate the `m_eye_angles.y` value based on the `data->m_stand_index2 % 6` value
-	switch ( data->m_stand_index2 % 6 ) {
-	case 0:
-		record->m_eye_angles.y = away + 180.f; // The angle 180 degrees away from `away`
-		break;
-
-	case 1:
-		record->m_eye_angles.y = record->m_body; // The current body angle
-		break;
-
-	case 2:
-		record->m_eye_angles.y = record->m_body + 180.f; // The current body angle plus 180 degrees
-		break;
-
-	case 3:
-		record->m_eye_angles.y = record->m_body + 110.f; // The current body angle plus 110 degrees
-		break;
-
-	case 4:
-		record->m_eye_angles.y = record->m_body - 110.f; // The current body angle minus 110 degrees
-		break;
-
-	case 5:
-		record->m_eye_angles.y = away; // The `away` angle
-		break;
-
-	default:
-		break;
-	}
-
 }
 
 void Resolver::ResolveAir( AimPlayer* data, LagRecord* record ) {
