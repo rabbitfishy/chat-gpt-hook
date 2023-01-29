@@ -6,3 +6,9 @@
 *.vsidx
 *.ipch
 *.opendb
+*.obj
+*.tlog
+*.tlog
+.vs/supremacy_csgo/v17/.suo
+*.tlog
+output/Release/obj/csgocheat.tlog/unsuccessfulbuild

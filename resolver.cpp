@@ -15,7 +15,7 @@ LagRecord* Resolver::FindIdealRecord( AimPlayer* data ) {
 
 		// try to find a record with a shot, lby update, walking or no anti-aim.
 		if ( it->m_shot || it->m_mode == Modes::RESOLVE_BODY || it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE )
-			return;
+			return false;
 
 		if ( !best_record )
 			best_record = (LagRecord*)&it;
@@ -255,12 +255,6 @@ void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 }
 
 void Resolver::ResolveAir( AimPlayer* data, LagRecord* record ) {
-	// For no-spread, call a separate resolver.
-	if ( g_menu.main.config.mode.get( ) == 1 ) {
-		AirNS( data, record );
-		return;
-	}
-
 	// Player speed is too low, assume they're standing.
 	if ( record->m_velocity.length_2d( ) < 60.f ) {
 		// Set mode for completion.

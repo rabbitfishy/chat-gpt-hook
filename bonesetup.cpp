@@ -3,22 +3,19 @@
 Bones g_bones{};;
 
 bool Bones::setup( Player* player, BoneArray* out, LagRecord* record ) {
-	// if the record isnt setup yet.
-	if( !record->m_setup ) {
-		// run setupbones rebuilt.
-		if( !BuildBones( player, 0x7FF00, record->m_bones, record ) )
+	if ( !record->m_setup ) {
+		if ( !BuildBones( player, 0x7FF00, record->m_bones, record ) )
 			return false;
 
-		// we have setup this record bones.
 		record->m_setup = true;
 	}
 
-	// record is setup.
-	if( out && record->m_setup )
+	if ( out && record->m_setup )
 		std::memcpy( out, record->m_bones, sizeof( BoneArray ) * 128 );
 
 	return true;
 }
+
 
 bool Bones::BuildBones( Player* target, int mask, BoneArray* out, LagRecord* record ) {
 	vec3_t		     pos[ 128 ];
