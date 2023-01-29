@@ -164,19 +164,11 @@ void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
 }
 
 void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
-	// for no-spread call a seperate resolver.
-	if( g_menu.main.config.mode.get( ) == 1 ) {
-		StandNS( data, record );
-		return;
-	}
-
 	// get predicted away angle for the player.
 	float away = GetAwayAngle( record );
 
 	// pointer for easy access.
 	LagRecord* move = &data->m_walk_record;
-
-	// we have a valid moving record.
 	if( move->m_sim_time > 0.f ) {
 		vec3_t delta = move->m_origin - record->m_origin;
 
@@ -187,227 +179,110 @@ void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 		}
 	}
 
-	// a valid moving context was found
-	if( data->m_moved ) {
-		float diff = math::NormalizedAngle( record->m_body - move->m_body );
-		float delta = record->m_anim_time - move->m_anim_time;
+	float diff = math::NormalizedAngle( record->m_body - move->m_body );
+	float delta = record->m_anim_time - move->m_anim_time;
 
-		// it has not been time for this first update yet.
-		if( delta < 0.22f ) {
-			// set angles to current LBY.
-			record->m_eye_angles.y = move->m_body;
-
-			// set resolve mode.
-			record->m_mode = Modes::RESOLVE_STOPPED_MOVING;
-
-			// exit out of the resolver, thats it.
-			return;
-		}
-
-		// LBY SHOULD HAVE UPDATED HERE.
-		else if( record->m_anim_time >= data->m_body_update ) {
-			// only shoot the LBY flick 3 times.
-			// if we happen to miss then we most likely mispredicted.
-			if( data->m_body_index <= 3 ) {
-				// set angles to current LBY.
+	// Check if delta is within a valid range
+	if ( delta >= 0.22f && delta <= 0.3f ) {
+		// Check if record's animation time is greater than or equal to the body update time
+		if ( record->m_anim_time >= data->m_body_update ) {
+			// Check if body index is less than or equal to 3
+			if ( data->m_body_index <= 3 ) {
 				record->m_eye_angles.y = record->m_body;
-
-				// predict next body update.
 				data->m_body_update = record->m_anim_time + 1.1f;
-
-				// set the resolve mode.
 				record->m_mode = Modes::RESOLVE_BODY;
-
-				return;
 			}
+			else {
+				record->m_mode = Modes::RESOLVE_STAND1;
+				C_AnimationLayer* curr = &record->m_layers[ 3 ];
+				int act = data->m_player->GetSequenceActivity( curr->m_sequence );
 
-			// set to stand1 -> known last move.
-			record->m_mode = Modes::RESOLVE_STAND1;
+				record->m_eye_angles.y = move->m_body;
 
-			C_AnimationLayer* curr = &record->m_layers[ 3 ];
-			int act = data->m_player->GetSequenceActivity( curr->m_sequence );
+				// Check if stand index is divisible by 3 with no remainder
+				if ( !( data->m_stand_index % 3 ) ) {
+					record->m_eye_angles.y += g_csgo.RandomFloat( -35.f, 35.f );
+				}
 
-			// ok, no fucking update. apply big resolver.
+				// Check if stand index is greater than 6 and act is not equal to 980
+				if ( data->m_stand_index > 6 && act != 980 ) {
+					record->m_eye_angles.y = move->m_body + 180.f;
+				}
+				else if ( data->m_stand_index > 4 && act != 980 ) {
+					record->m_eye_angles.y = away + 180.f;
+				}
+			}
+		}
+		else {
 			record->m_eye_angles.y = move->m_body;
-
-			// every third shot do some fuckery.
-			if ( !( data->m_stand_index % 3 ) )
-				record->m_eye_angles.y += g_csgo.RandomFloat( -35.f, 35.f );
-
-			// jesus we can fucking stop missing can we?
-			if( data->m_stand_index > 6 && act != 980 ) {
-				// lets just hope they switched ang after move.
-				record->m_eye_angles.y = move->m_body + 180.f;
-			}
-
-			// we missed 4 shots.
-			else if( data->m_stand_index > 4 && act != 980 ) {
-				// try backwards.
-				record->m_eye_angles.y = away + 180.f;
-			}
-
-			return;
+			record->m_mode = Modes::RESOLVE_STOPPED_MOVING;
 		}
 	}
 
 	// stand2 -> no known last move.
 	record->m_mode = Modes::RESOLVE_STAND2;
 
-	switch( data->m_stand_index2 % 6 ) {
-
+	// Calculate the `m_eye_angles.y` value based on the `data->m_stand_index2 % 6` value
+	switch ( data->m_stand_index2 % 6 ) {
 	case 0:
-		record->m_eye_angles.y = away + 180.f;
+		record->m_eye_angles.y = away + 180.f; // The angle 180 degrees away from `away`
 		break;
 
 	case 1:
-		record->m_eye_angles.y = record->m_body;
+		record->m_eye_angles.y = record->m_body; // The current body angle
 		break;
 
 	case 2:
-		record->m_eye_angles.y = record->m_body + 180.f;
+		record->m_eye_angles.y = record->m_body + 180.f; // The current body angle plus 180 degrees
 		break;
 
 	case 3:
-		record->m_eye_angles.y = record->m_body + 110.f;
+		record->m_eye_angles.y = record->m_body + 110.f; // The current body angle plus 110 degrees
 		break;
 
 	case 4:
-		record->m_eye_angles.y = record->m_body - 110.f;
+		record->m_eye_angles.y = record->m_body - 110.f; // The current body angle minus 110 degrees
 		break;
 
 	case 5:
-		record->m_eye_angles.y = away;
-		break;
-
-	default:
-		break;
-	}
-}
-
-void Resolver::StandNS( AimPlayer* data, LagRecord* record ) {
-	// get away angles.
-	float away = GetAwayAngle( record );
-
-	switch( data->m_shots % 8 ) {
-	case 0:
-		record->m_eye_angles.y = away + 180.f;
-		break;
-
-	case 1:
-		record->m_eye_angles.y = away + 90.f;
-		break;
-	case 2:
-		record->m_eye_angles.y = away - 90.f;
-		break;
-
-	case 3:
-		record->m_eye_angles.y = away + 45.f;
-		break;
-	case 4:
-		record->m_eye_angles.y = away - 45.f;
-		break;
-
-	case 5:
-		record->m_eye_angles.y = away + 135.f;
-		break;
-	case 6:
-		record->m_eye_angles.y = away - 135.f;
-		break;
-
-	case 7:
-		record->m_eye_angles.y = away + 0.f;
+		record->m_eye_angles.y = away; // The `away` angle
 		break;
 
 	default:
 		break;
 	}
 
-	// force LBY to not fuck any pose and do a true bruteforce.
-	record->m_body = record->m_eye_angles.y;
 }
 
 void Resolver::ResolveAir( AimPlayer* data, LagRecord* record ) {
-	// for no-spread call a seperate resolver.
-	if( g_menu.main.config.mode.get( ) == 1 ) {
+	// For no-spread, call a separate resolver.
+	if ( g_menu.main.config.mode.get( ) == 1 ) {
 		AirNS( data, record );
 		return;
 	}
 
-	// else run our matchmaking air resolver.
-
-	// we have barely any speed. 
-	// either we jumped in place or we just left the ground.
-	// or someone is trying to fool our resolver.
-	if( record->m_velocity.length_2d( ) < 60.f ) {
-		// set this for completion.
-		// so the shot parsing wont pick the hits / misses up.
-		// and process them wrongly.
+	// Player speed is too low, assume they're standing.
+	if ( record->m_velocity.length_2d( ) < 60.f ) {
+		// Set mode for completion.
 		record->m_mode = Modes::RESOLVE_STAND;
 
-		// invoke our stand resolver.
+		// Invoke stand resolver.
 		ResolveStand( data, record );
-
-		// we are done.
 		return;
 	}
 
-	// try to predict the direction of the player based on his velocity direction.
-	// this should be a rough estimation of where he is looking.
-	float velyaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
+	// Predict player direction based on velocity.
+	float velocity_yaw = math::rad_to_deg( std::atan2( record->m_velocity.y, record->m_velocity.x ) );
 
-	switch( data->m_shots % 3 ) {
+	switch ( data->m_shots % 3 ) {
 	case 0:
-		record->m_eye_angles.y = velyaw + 180.f;
+		record->m_eye_angles.y = velocity_yaw + 180.f;
 		break;
-
 	case 1:
-		record->m_eye_angles.y = velyaw - 90.f;
-		break;
-
-	case 2:
-		record->m_eye_angles.y = velyaw + 90.f;
-		break;
-	}
-}
-
-void Resolver::AirNS( AimPlayer* data, LagRecord* record ) {
-	// get away angles.
-	float away = GetAwayAngle( record );
-
-	switch( data->m_shots % 9 ) {
-	case 0:
-		record->m_eye_angles.y = away + 180.f;
-		break;
-
-	case 1:
-		record->m_eye_angles.y = away + 150.f;
+		record->m_eye_angles.y = velocity_yaw - 90.f;
 		break;
 	case 2:
-		record->m_eye_angles.y = away - 150.f;
-		break;
-
-	case 3:
-		record->m_eye_angles.y = away + 165.f;
-		break;
-	case 4:
-		record->m_eye_angles.y = away - 165.f;
-		break;
-
-	case 5:
-		record->m_eye_angles.y = away + 135.f;
-		break;
-	case 6:
-		record->m_eye_angles.y = away - 135.f;
-		break;
-
-	case 7:
-		record->m_eye_angles.y = away + 90.f;
-		break;
-	case 8:
-		record->m_eye_angles.y = away - 90.f;
-		break;
-
-	default:
+		record->m_eye_angles.y = velocity_yaw + 90.f;
 		break;
 	}
 }
