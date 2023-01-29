@@ -812,80 +812,68 @@ bool AimPlayer::GetBestAimPosition( vec3_t &aim, float &damage, LagRecord *recor
 	record->cache( );
 
 	// iterate hitboxes.
-	for ( const auto &it : m_hitboxes ) {
+	for ( const auto& hitbox : m_hitboxes ) {
 		done = false;
 
-		// setup points on hitbox.
-		if ( !SetupHitboxPoints( record, record->m_bones, it.m_index, points ) )
+		// Setup points on hitbox
+		if ( !SetupHitboxPoints( record, record->m_bones, hitbox.m_index, points ) )
 			continue;
 
-		// iterate points on hitbox.
-		for ( const auto &point : points ) {
-			penetration::PenetrationInput_t in;
+		// Iterate points on hitbox
+		for ( const auto& point : points ) {
+			penetration::PenetrationInput_t input;
 
-			in.m_damage = dmg;
-			in.m_damage_pen = pendmg;
-			in.m_can_pen = pen;
-			in.m_target = m_player;
-			in.m_from = g_cl.m_local;
-			in.m_pos = point;
+			input.m_damage = damage;
+			input.m_damage_pen = pendmg;
+			input.m_can_pen = pen;
+			input.m_target = m_player;
+			input.m_from = g_cl.m_local;
+			input.m_pos = point;
 
-			// ignore mindmg.
-			if ( it.m_mode == HitscanMode::LETHAL || it.m_mode == HitscanMode::LETHAL2 )
-				in.m_damage = in.m_damage_pen = 1.f;
+			// Ignore minimum damage
+			if ( hitbox.m_mode == HitscanMode::LETHAL || hitbox.m_mode == HitscanMode::LETHAL2 )
+				input.m_damage = input.m_damage_pen = 1.f;
 
-			penetration::PenetrationOutput_t out;
+			penetration::PenetrationOutput_t output;
 
-			// we can hit p!
-			if ( penetration::run( &in, &out ) ) {
-
-				// nope we did not hit head..
-				if ( it.m_index == HITBOX_HEAD && out.m_hitgroup != HITGROUP_HEAD )
+			// Check if we can hit the player
+			if ( penetration::run( &input, &output ) ) {
+				// Ignore hit if not a headshot
+				if ( hitbox.m_index == HITBOX_HEAD && output.m_hitgroup != HITGROUP_HEAD )
 					continue;
 
-				// prefered hitbox, just stop now.
-				if ( it.m_mode == HitscanMode::PREFER )
+				// Check hitbox selection mode
+				if ( hitbox.m_mode == HitscanMode::PREFER ) {
 					done = true;
-
-				// this hitbox requires lethality to get selected, if that is the case.
-				// we are done, stop now.
-				else if ( it.m_mode == HitscanMode::LETHAL && out.m_damage >= m_player->m_iHealth( ) )
+				}
+				else if ( hitbox.m_mode == HitscanMode::LETHAL && output.m_damage >= m_player->m_iHealth( ) ) {
 					done = true;
-
-				// 2 shots will be sufficient to kill.
-				else if ( it.m_mode == HitscanMode::LETHAL2 && ( out.m_damage * 2.f ) >= m_player->m_iHealth( ) )
+				}
+				else if ( hitbox.m_mode == HitscanMode::LETHAL2 && ( output.m_damage * 2.f ) >= m_player->m_iHealth( ) ) {
 					done = true;
-
-				// this hitbox has normal selection, it needs to have more damage.
-				else if ( it.m_mode == HitscanMode::NORMAL ) {
-					// we did more damage.
-					if ( out.m_damage > scan.m_damage ) {
-						// save new best data.
-						scan.m_damage = out.m_damage;
+				}
+				else if ( hitbox.m_mode == HitscanMode::NORMAL ) {
+					if ( output.m_damage > scan.m_damage ) {
+						scan.m_damage = output.m_damage;
 						scan.m_pos = point;
 
-						// if the first point is lethal
-						// screw the other ones.
-						if ( point == points.front( ) && out.m_damage >= m_player->m_iHealth( ) )
+						// Break if first point is lethal
+						if ( point == points.front( ) && output.m_damage >= m_player->m_iHealth( ) )
 							break;
 					}
 				}
 
-				// we found a preferred / lethal hitbox.
 				if ( done ) {
-					// save new best data.
-					scan.m_damage = out.m_damage;
+					scan.m_damage = output.m_damage;
 					scan.m_pos = point;
 					break;
 				}
 			}
 		}
 
-		// ghetto break out of outer loop.
 		if ( done )
 			break;
 	}
-
 	// we found something that we can damage.
 	// set out vars.
 	if ( scan.m_damage > 0.f ) {
