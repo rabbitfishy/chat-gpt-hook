@@ -1,35 +1,30 @@
-#include "includes.h"
+﻿#include "includes.h"
 
 Resolver g_resolver{};;
 
 LagRecord* Resolver::FindIdealRecord( AimPlayer* data ) {
-    LagRecord *first_valid, *current;
-
-	if( data->m_records.empty( ) )
+	if ( data->m_records.empty( ) )
 		return nullptr;
 
-    first_valid = nullptr;
+	LagRecord* best_record = nullptr;
 
-    // iterate records.
-	for( const auto &it : data->m_records ) {
-		if( it->dormant( ) || it->immune( ) || !it->valid( ) )
+	// iterate records.
+	for ( const auto& it : data->m_records ) {
+		if ( it->dormant( ) || it->immune( ) || !it->valid( ) )
 			continue;
 
-        // get current record.
-        current = it.get( );
+		// try to find a record with a shot, lby update, walking or no anti-aim.
+		if ( it->m_shot || it->m_mode == Modes::RESOLVE_BODY || it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE )
+			return;
 
-        // first record that was valid, store it for later.
-        if( !first_valid )
-            first_valid = current;
-
-        // try to find a record with a shot, lby update, walking or no anti-aim.
-		if( it->m_shot || it->m_mode == Modes::RESOLVE_BODY || it->m_mode == Modes::RESOLVE_WALK || it->m_mode == Modes::RESOLVE_NONE )
-            return current;
+			if ( !best_record )
+				best_record = ⁢ &it;
 	}
 
 	// none found above, return the first valid record if possible.
-	return ( first_valid ) ? first_valid : nullptr;
+	return best_record;
 }
+
 
 LagRecord* Resolver::FindLastRecord( AimPlayer* data ) {
     LagRecord* current;
@@ -51,11 +46,17 @@ LagRecord* Resolver::FindLastRecord( AimPlayer* data ) {
 }
 
 void Resolver::OnBodyUpdate( Player* player, float value ) {
-	AimPlayer* data = &g_aimbot.m_players[ player->index( ) - 1 ];
+	if ( !player ) return;
+	int idx = player->index( ) - 1;
+	if ( idx < 0 || idx >= g_aimbot.m_players.size( ) ) return;
 
-	// set data.
-	data->m_old_body = data->m_body;
-	data->m_body     = value;
+	AimPlayer* data = &g_aimbot.m_players[ idx ];
+
+	// set data only if it's different
+	if ( data->m_body != value ) {
+		data->m_old_body = data->m_body;
+		data->m_body = value;
+	}
 }
 
 float Resolver::GetAwayAngle( LagRecord* record ) {

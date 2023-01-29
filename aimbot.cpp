@@ -312,6 +312,8 @@ void AimPlayer::OnRoundStart( Player *player ) {
 	m_stand_index2 = 0;
 	m_body_index   = 0;
 
+	m_moved = false;
+
 	m_records.clear( );
 	m_hitboxes.clear( );
 
@@ -725,7 +727,7 @@ bool AimPlayer::SetupHitboxPoints( LagRecord *record, BoneArray *bones, int inde
 	float scale = g_menu.main.aimbot.scale.get( ) / 100.f;
 
 	// big inair fix.
-	if ( !( record->m_pred_flags ) & FL_ONGROUND )
+	if ( !( record->m_pred_flags & FL_ONGROUND ) )
 		scale = 0.7f;
 
 	float bscale = g_menu.main.aimbot.body_scale.get( ) / 100.f;
