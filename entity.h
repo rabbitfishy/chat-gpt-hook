@@ -623,6 +623,16 @@ public:
 		return get< float >(g_entoffsets.m_flLowerBodyYawTarget);
 	}
 
+	__forceinline float& m_flUpdateLeanOut( ) {
+		auto update_lean = g_netvars.get( HASH( "DT_CSPlayer" ), HASH( "m_flUpdateLeanOut" ) );
+		return get<float>( update_lean );
+	}
+
+	__forceinline float& m_flUpdateLeanTime( ) {
+		auto update_lean = g_netvars.get( HASH( "DT_CSPlayer" ), HASH( "m_flUpdateLeanTime" ) );
+		return get<float>( update_lean );
+	}
+
 	__forceinline float &m_fImmuneToGunGameDamageTime() {
 		return get< float >(g_entoffsets.m_fImmuneToGunGameDamageTime);
 	}

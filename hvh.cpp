@@ -428,6 +428,19 @@ void HVH::DoRealAntiAim( ) {
 				g_cl.m_cmd->m_view_angles.y -= 90.f;
 		}
 
+		// randomization range
+		const float max_offset = 35.f;
+
+		// declare variables to store current time and previous time
+		int current_time = g_csgo.m_globals->m_tick_count;
+		int previous_time = 0;
+		auto m_update_interval = rand( ) % ( 50 - 500 + 1 ) + 50;
+		// generate random offset value within the range
+		float offset = ( rand( ) % ( int )( 2 * max_offset ) ) - max_offset;
+
+		// determine which type of anti-aim to use
+		bool use_left = rand( ) % 2;
+
 		// check if we will have a lby fake this tick.
 		if( !g_cl.m_lag && g_csgo.m_globals->m_curtime >= g_cl.m_body_pred && ( stand || air ) ) {
 			// there will be an lbyt update on this tick.
@@ -466,25 +479,12 @@ void HVH::DoRealAntiAim( ) {
 					break;
 					
 				case 5: // chat gpt 2
-					// randomization range
-					const float max_offset = 35.f;
-
-					// generate random offset value within the range
-					float offset = ( rand( ) % ( int )( 2 * max_offset ) ) - max_offset;
-
-					// determine which type of anti-aim to use
-					bool use_left = rand( ) % 2;
-
 					if ( use_left )
 						g_cl.m_cmd->m_view_angles.y = 90.f + offset;
 					else
 						g_cl.m_cmd->m_view_angles.y = -90.f + offset;
 					break;
 				case 6: // another chat gpt3
-					// declare variables to store current time and previous time
-					int current_time = g_csgo.m_globals->m_tick_count;
-					int previous_time = 0;
-					auto m_update_interval = rand() % (50 - 500 + 1) + 50;
 
 					// in the anti-aim function
 					// if the current time minus the previous time is greater than or equal to the desired update interval

@@ -168,6 +168,93 @@ void Resolver::ResolveWalk( AimPlayer* data, LagRecord* record ) {
 	std::memcpy( &data->m_walk_record, record, sizeof( LagRecord ) );
 }
 
+const int TICK_RATE = 64;
+const float UPDATE_RATE = 1.0f / TICK_RATE;
+
+float get_lby_update_time( ) {
+	// Get the current time
+	auto current_time = std::chrono::high_resolution_clock::now( );
+	// Convert the current time to milliseconds
+	long long current_time_ms = std::chrono::duration_cast< std::chrono::milliseconds >( current_time.time_since_epoch( ) ).count( );
+	// Calculate the next update time by rounding up to the nearest multiple of the update rate
+	float next_update_time = ( ceilf( current_time_ms * UPDATE_RATE ) / UPDATE_RATE );
+	// Return the time difference between the current time and the next update time
+	return next_update_time - current_time_ms * 0.001f;
+}
+
+float get_lby_update_time( Player* player ) {
+	// Time when the last lower body yaw update was recorded
+	float last_update = player->m_flLowerBodyYawTarget( );
+
+	// Speed and direction of the player's movement
+	vec3_t velocity = player->m_vecVelocity( );
+
+	// Check if the player is moving
+	if ( velocity.length_2d( ) > 0.1f ) {
+		// Return the last update time plus 1 second (assumes the update occurs every second while moving)
+		return last_update + 1.0f;
+	}
+	else {
+		// Return the last update time plus 0.22 seconds (assumes the update occurs every 0.22 seconds while standing)
+		return last_update + 0.22f;
+	}
+}
+
+float predict_lby( Player* player, LagRecord* record ) {
+	float server_time = player->m_nTickBase( ) * g_csgo.m_globals->m_interval;
+	float next_update = get_lby_update_time( player );
+
+	if ( next_update - server_time > 0.22f ) {
+		return record->m_eye_angles.y = player->m_flLowerBodyYawTarget( );
+	}
+	else {
+		return record->m_eye_angles.y = player->m_angEyeAngles( ).y + 180.f;
+	}
+}
+
+float PredictLowerBodyYaw( Player* player )
+{
+	float lby = player->m_flLowerBodyYawTarget( );
+	int tick_count = g_csgo.m_globals->m_tick_count;
+
+	// Check if the player has updated their lower body yaw recently
+	if ( player->m_flUpdateLeanOut( ) > tick_count )
+		return lby;
+
+	// Predict the next lower body yaw update
+	float server_time = player->m_flSimulationTime( ) + g_csgo.m_globals->m_interval;
+	float flTimeSinceUpdate = server_time - player->m_flUpdateLeanTime( );
+	if ( flTimeSinceUpdate >= 1.1f )
+		return lby;
+
+	return player->m_angEyeAngles( ).y + 180.f;
+}
+
+float PredictLBY( LagRecord& record, AimPlayer* data ) {
+	float lby = record.m_body;
+	float m_anim_time_oldx = 0;
+
+	// get pointer to previous record.
+	LagRecord* previous = data->m_records[ 1 ].get( );
+	if ( previous && data->m_records.size() >= 2 ) {
+		m_anim_time_oldx = previous->m_anim_time;
+	}
+	
+	float delta = record.m_anim_time - m_anim_time_oldx;
+
+	// Check if delta time is within a valid range
+	if ( delta >= 0.22f && delta <= 0.3f ) {
+		// Check if animation time is greater than or equal to the body update time
+		if ( record.m_anim_time >= data->m_body_update ) {
+			// Update the lower body yaw
+			lby = record.m_body + ( delta * 120.f );
+			data->m_body_update = record.m_anim_time + 1.1f;
+		}
+	}
+
+	return lby;
+}
+
 void Resolver::ResolveStand( AimPlayer* data, LagRecord* record ) {
 	// get predicted away angle for the player.
 	float away = GetAwayAngle( record );
