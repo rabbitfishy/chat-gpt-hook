@@ -644,11 +644,6 @@ bool AimPlayer::SetupHitboxPoints( LagRecord *record, BoneArray *bones, int inde
 
 	// these indexes represent boxes.
 	if ( bbox->m_radius <= 0.f ) {
-		// references: 
-		//      https://developer.valvesoftware.com/wiki/Rotation_Tutorial
-		//      CBaseAnimating::GetHitboxBonePosition
-		//      CBaseAnimating::DrawServerHitboxes
-
 		// convert rotation angle to a matrix.
 		matrix3x4_t rot_matrix;
 		g_csgo.AngleMatrix( bbox->m_angle, rot_matrix );
@@ -668,8 +663,6 @@ bool AimPlayer::SetupHitboxPoints( LagRecord *record, BoneArray *bones, int inde
 		const int HITBOX_LEFT_FOOT = HITBOX_L_FOOT;
 
 		if ( index == HITBOX_RIGHT_FOOT || index == HITBOX_LEFT_FOOT ) {
-			// Foot offset relative to center of hitbox 
-			// (bbox->m_mins.z - center.z) * 0.875f
 			float foot_offset = ( bbox->m_mins.z - center.z ) * 0.875f;
 
 			// Invert offset for left foot
@@ -811,69 +804,60 @@ bool AimPlayer::GetBestAimPosition( vec3_t &aim, float &damage, LagRecord *recor
 	// write all data of this record l0l.
 	record->cache( );
 
-	// iterate hitboxes.
-	for ( const auto& hitbox : m_hitboxes ) {
+	for ( const auto& it : m_hitboxes ) {
 		done = false;
 
-		// Setup points on hitbox
-		if ( !SetupHitboxPoints( record, record->m_bones, hitbox.m_index, points ) )
+		// Skip hitboxes if we cannot setup their points.
+		if ( !SetupHitboxPoints( record, record->m_bones, it.m_index, points ) )
 			continue;
 
-		// Iterate points on hitbox
 		for ( const auto& point : points ) {
-			penetration::PenetrationInput_t input;
+			penetration::PenetrationInput_t in;
+			in.m_damage = dmg;
+			in.m_damage_pen = pendmg;
+			in.m_can_pen = pen;
+			in.m_target = m_player;
+			in.m_from = g_cl.m_local;
+			in.m_pos = point;
 
-			input.m_damage = damage;
-			input.m_damage_pen = pendmg;
-			input.m_can_pen = pen;
-			input.m_target = m_player;
-			input.m_from = g_cl.m_local;
-			input.m_pos = point;
+			// Ignore mindmg.
+			if ( it.m_mode == HitscanMode::LETHAL || it.m_mode == HitscanMode::LETHAL2 )
+				in.m_damage = in.m_damage_pen = 1.f;
 
-			// Ignore minimum damage
-			if ( hitbox.m_mode == HitscanMode::LETHAL || hitbox.m_mode == HitscanMode::LETHAL2 )
-				input.m_damage = input.m_damage_pen = 1.f;
-
-			penetration::PenetrationOutput_t output;
-
-			// Check if we can hit the player
-			if ( penetration::run( &input, &output ) ) {
-				// Ignore hit if not a headshot
-				if ( hitbox.m_index == HITBOX_HEAD && output.m_hitgroup != HITGROUP_HEAD )
+			penetration::PenetrationOutput_t out;
+			if ( penetration::run( &in, &out ) ) {
+				if ( it.m_index == HITBOX_HEAD && out.m_hitgroup != HITGROUP_HEAD )
 					continue;
 
-				// Check hitbox selection mode
-				if ( hitbox.m_mode == HitscanMode::PREFER ) {
-					done = true;
-				}
-				else if ( hitbox.m_mode == HitscanMode::LETHAL && output.m_damage >= m_player->m_iHealth( ) ) {
-					done = true;
-				}
-				else if ( hitbox.m_mode == HitscanMode::LETHAL2 && ( output.m_damage * 2.f ) >= m_player->m_iHealth( ) ) {
-					done = true;
-				}
-				else if ( hitbox.m_mode == HitscanMode::NORMAL ) {
-					if ( output.m_damage > scan.m_damage ) {
-						scan.m_damage = output.m_damage;
-						scan.m_pos = point;
-
-						// Break if first point is lethal
-						if ( point == points.front( ) && output.m_damage >= m_player->m_iHealth( ) )
-							break;
-					}
-				}
-
-				if ( done ) {
-					scan.m_damage = output.m_damage;
+				if ( it.m_mode == HitscanMode::PREFER ) {
+					scan.m_damage = out.m_damage;
 					scan.m_pos = point;
 					break;
 				}
+				else if ( it.m_mode == HitscanMode::LETHAL && out.m_damage >= m_player->m_iHealth( ) ) {
+					scan.m_damage = out.m_damage;
+					scan.m_pos = point;
+					break;
+				}
+				else if ( it.m_mode == HitscanMode::LETHAL2 && ( out.m_damage * 2.f ) >= m_player->m_iHealth( ) ) {
+					scan.m_damage = out.m_damage;
+					scan.m_pos = point;
+					break;
+				}
+				else if ( it.m_mode == HitscanMode::NORMAL ) {
+					if ( out.m_damage > scan.m_damage ) {
+						scan.m_damage = out.m_damage;
+						scan.m_pos = point;
+						if ( point == points.front( ) && out.m_damage >= m_player->m_iHealth( ) )
+							break;
+					}
+				}
 			}
 		}
-
 		if ( done )
 			break;
 	}
+
 	// we found something that we can damage.
 	// set out vars.
 	if ( scan.m_damage > 0.f ) {
@@ -885,80 +869,58 @@ bool AimPlayer::GetBestAimPosition( vec3_t &aim, float &damage, LagRecord *recor
 	return false;
 }
 
-bool Aimbot::SelectTarget( LagRecord *record, const vec3_t &aim, float damage ) {
-	float dist, fov, height;
-	int   hp;
+bool Aimbot::SelectTarget( LagRecord* record, const vec3_t& aim, float damage ) {
+	float fov;
+	int hp;
 
-	// fov check.
-	if ( g_menu.main.aimbot.fov.get( ) ) {
-		// if out of fov, retn false.
-		if ( math::GetFOV( g_cl.m_view_angles, g_cl.m_shoot_pos, aim ) > g_menu.main.aimbot.fov_amount.get( ) )
-			return false;
+	if ( g_menu.main.aimbot.fov.get( ) &&
+		math::GetFOV( g_cl.m_view_angles, g_cl.m_shoot_pos, aim ) > g_menu.main.aimbot.fov_amount.get( ) ) {
+		return false;
 	}
 
 	switch ( g_menu.main.aimbot.selection.get( ) ) {
-
-		// distance.
-	case 0:
-		dist = ( record->m_pred_origin - g_cl.m_shoot_pos ).length( );
-
-		if ( dist < m_best_dist ) {
-			m_best_dist = dist;
+	case 0: // distance
+		if ( ( record->m_pred_origin - g_cl.m_shoot_pos ).length( ) < m_best_dist ) {
+			m_best_dist = ( record->m_pred_origin - g_cl.m_shoot_pos ).length( );
 			return true;
 		}
-
 		break;
 
-		// crosshair.
-	case 1:
+	case 1: // crosshair
 		fov = math::GetFOV( g_cl.m_view_angles, g_cl.m_shoot_pos, aim );
-
 		if ( fov < m_best_fov ) {
 			m_best_fov = fov;
 			return true;
 		}
-
 		break;
 
-		// damage.
-	case 2:
+	case 2: // damage
 		if ( damage > m_best_damage ) {
 			m_best_damage = damage;
 			return true;
 		}
-
 		break;
 
-		// lowest hp.
-	case 3:
-		// fix for retarded servers?
+	case 3: // lowest hp
 		hp = std::min( 100, record->m_player->m_iHealth( ) );
-
 		if ( hp < m_best_hp ) {
 			m_best_hp = hp;
 			return true;
 		}
-
 		break;
 
-		// least lag.
-	case 4:
+	case 4: // least lag
 		if ( record->m_lag < m_best_lag ) {
 			m_best_lag = record->m_lag;
 			return true;
 		}
-
 		break;
 
-		// height.
-	case 5:
-		height = record->m_pred_origin.z - g_cl.m_local->m_vecOrigin( ).z;
-
-		if ( height < m_best_height ) {
-			m_best_height = height;
+	case 5: // height
+		if ( record->m_pred_origin.z - g_cl.m_local->m_vecOrigin( ).z < m_best_height ) {
+			m_best_height = record->m_pred_origin.z - g_cl.m_local->m_vecOrigin( ).z;
 			return true;
 		}
-
 		break;
 
 	default:
